@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# QGIS
+*.qgs~
+
+# Build/Deploy
+zip_build/
+*.zip
+*.zip.sha256
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+results.html
+.pytest_cache/
