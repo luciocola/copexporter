@@ -67,7 +67,7 @@ class STACCOPExporter:
         asset_path = self.export_layer_data(layer, file_name)
         
         # Create STAC Item
-        stac_item = self.create_stac_item(layer, layer_id, asset_path, cop_metadata)
+        stac_item = self.create_stac_item(layer, layer_id, asset_path, cop_metadata, file_name)
         
         # Save STAC Item JSON using sanitized filename
         item_path = os.path.join(self.stac_dir, f'{file_name}.json')
@@ -166,15 +166,16 @@ class STACCOPExporter:
         else:
             raise Exception(f"Unsupported layer type: {type(layer)}")
 
-    def create_stac_item(self, layer, layer_id, asset_path, cop_metadata):
+    def create_stac_item(self, layer, layer_id, asset_path, cop_metadata, file_name):
         """
         Create STAC Item with COP extension
         
         Args:
             layer: QgsMapLayer
-            layer_id: Sanitized identifier
+            layer_id: UUID4 identifier for STAC item
             asset_path: Path to exported asset
             cop_metadata: COP metadata dictionary
+            file_name: Sanitized filename for JSON and assets
             
         Returns:
             STAC Item dictionary
