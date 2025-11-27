@@ -22,10 +22,11 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 class COPSTACDialog(QDialog, FORM_CLASS):
     """Dialog for COP STAC Export configuration"""
 
-    def __init__(self, parent=None):
+    def __init__(self, iface=None, parent=None):
         """Constructor."""
         super(COPSTACDialog, self).__init__(parent)
         self.setupUi(self)
+        self.iface = iface
         
         # Connect signals
         self.btnSelectOutput.clicked.connect(self.select_output_directory)
@@ -240,7 +241,9 @@ class COPSTACDialog(QDialog, FORM_CLASS):
 
         # Export layers
         try:
-            exporter = STACCOPExporter(self.output_dir)
+            # Get map canvas for raster extent if available
+            map_canvas = self.iface.mapCanvas() if self.iface else None
+            exporter = STACCOPExporter(self.output_dir, map_canvas=map_canvas)
             success_count = 0
             
             for layer in selected_layers:

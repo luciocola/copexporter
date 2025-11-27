@@ -58,7 +58,7 @@ class CopExporter:
                 QCoreApplication.installTranslator(self.translator)
 
         # Create the dialog (after translation) and keep reference
-        self.dlg = COPSTACDialog()
+        self.dlg = COPSTACDialog(iface=iface)
 
         # Declare instance attributes
         self.actions = []

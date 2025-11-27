@@ -4,6 +4,7 @@ STAC COP Exporter - Core export functionality
 import hashlib
 import json
 import os
+import shutil
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -13,21 +14,31 @@ from qgis.core import (
     QgsVectorFileWriter,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
-    QgsProject
+    QgsProject,
+    QgsRasterFileWriter,
+    QgsRasterPipe,
+    QgsRectangle
 )
+try:
+    from osgeo import gdal
+    GDAL_AVAILABLE = True
+except ImportError:
+    GDAL_AVAILABLE = False
 
 
 class STACCOPExporter:
     """Handles export of QGIS layers to STAC format with COP extension"""
 
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, map_canvas=None):
         """
         Initialize exporter
         
         Args:
             output_dir: Directory where STAC files will be exported
+            map_canvas: Optional QgsMapCanvas to use for extent clipping
         """
         self.output_dir = output_dir
+        self.map_canvas = map_canvas
         self.exported_items = []
         
         # Create STAC collection directory
@@ -98,9 +109,59 @@ class STACCOPExporter:
             return output_file
             
         elif isinstance(layer, QgsRasterLayer):
-            # For raster, we'll reference the original source
-            # In a production plugin, you'd want to copy/process the raster
-            return layer.source()
+            # Export raster with proper handling
+            source_path = layer.source()
+            
+            # Determine output format and extension
+            if source_path.lower().endswith('.tif') or source_path.lower().endswith('.tiff'):
+                output_file = os.path.join(self.assets_dir, f'{layer_id}.tif')
+            else:
+                # Convert to GeoTIFF for portability
+                output_file = os.path.join(self.assets_dir, f'{layer_id}.tif')
+            
+            # Export raster using QGIS raster writer
+            try:
+                # Create raster file writer
+                file_writer = QgsRasterFileWriter(output_file)
+                file_writer.setOutputFormat('GTiff')
+                
+                # Create pipe for raster processing
+                pipe = QgsRasterPipe()
+                provider = layer.dataProvider()
+                
+                if not pipe.set(provider.clone()):
+                    raise Exception("Cannot set pipe provider")
+                
+                # Get layer extent (visible portion)
+                extent = layer.extent()
+                width = layer.width()
+                height = layer.height()
+                
+                # Write raster
+                error = file_writer.writeRaster(
+                    pipe,
+                    width,
+                    height,
+                    extent,
+                    layer.crs()
+                )
+                
+                if error != QgsRasterFileWriter.NoError:
+                    # Fallback: copy original file if write fails
+                    if os.path.exists(source_path) and os.path.isfile(source_path):
+                        shutil.copy2(source_path, output_file)
+                    else:
+                        raise Exception(f"Failed to export raster layer: {error}")
+                
+                return output_file
+                
+            except Exception as e:
+                # Fallback: try to copy the original file
+                if os.path.exists(source_path) and os.path.isfile(source_path):
+                    shutil.copy2(source_path, output_file)
+                    return output_file
+                else:
+                    raise Exception(f"Failed to export raster: {str(e)}")
         
         else:
             raise Exception(f"Unsupported layer type: {type(layer)}")
@@ -150,22 +211,36 @@ class STACCOPExporter:
             ]]
         }
         
-        # Determine asset type
+        # Determine asset type and add format-specific metadata
         if isinstance(layer, QgsVectorLayer):
             asset_type = "feature"
             media_type = "application/geo+json"
-            file_ext = os.path.splitext(asset_path)[1]
-        else:
+            asset_roles = ["data"]
+        else:  # Raster layer
             asset_type = "imagery"
-            media_type = "image/tiff"
-            file_ext = os.path.splitext(asset_path)[1]
+            # Determine media type from file extension
+            if asset_path.lower().endswith('.tif') or asset_path.lower().endswith('.tiff'):
+                media_type = "image/tiff; application=geotiff"
+            elif asset_path.lower().endswith('.png'):
+                media_type = "image/png"
+            elif asset_path.lower().endswith('.jpg') or asset_path.lower().endswith('.jpeg'):
+                media_type = "image/jpeg"
+            else:
+                media_type = "image/tiff"
+            asset_roles = ["data", "visual"]
         
         # Build STAC Item
+        stac_extensions = [
+            "https://stac-extensions.github.io/cop/v1.0.0/schema.json"
+        ]
+        
+        # Add raster extension if it's a raster layer
+        if isinstance(layer, QgsRasterLayer):
+            stac_extensions.append("https://stac-extensions.github.io/raster/v1.1.0/schema.json")
+        
         stac_item = {
             "stac_version": "1.0.0",
-            "stac_extensions": [
-                "https://stac-extensions.github.io/cop/v1.0.0/schema.json"
-            ],
+            "stac_extensions": stac_extensions,
             "type": "Feature",
             "id": layer_id,
             "bbox": bbox,
@@ -179,17 +254,41 @@ class STACCOPExporter:
                     "href": os.path.relpath(asset_path, self.stac_dir),
                     "title": f"{layer.name()} Data",
                     "type": media_type,
-                    "roles": ["data"],
+                    "roles": asset_roles,
                     "cop:asset_type": asset_type
                 }
             },
             "links": [
                 {
                     "rel": "self",
-                    "href": f"./{layer_id}.json"
+                    "href": f"./{file_name}.json"
                 }
             ]
         }
+        
+        # Add raster-specific metadata if it's a raster layer
+        if isinstance(layer, QgsRasterLayer):
+            provider = layer.dataProvider()
+            stac_item['properties']['raster:bands'] = []
+            
+            for band_num in range(1, layer.bandCount() + 1):
+                band_info = {
+                    "name": layer.bandName(band_num),
+                    "data_type": provider.dataType(band_num)
+                }
+                # Add statistics if available
+                stats = provider.bandStatistics(band_num)
+                if stats.minimumValue != stats.maximumValue:
+                    band_info["statistics"] = {
+                        "minimum": stats.minimumValue,
+                        "maximum": stats.maximumValue,
+                        "mean": stats.mean,
+                        "stddev": stats.stdDev
+                    }
+                stac_item['properties']['raster:bands'].append(band_info)
+            
+            # Add pixel size
+            stac_item['properties']['gsd'] = layer.rasterUnitsPerPixelX()
         
         # Add COP metadata fields to properties
         if cop_metadata.get('mission'):
