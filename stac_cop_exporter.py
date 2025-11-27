@@ -69,10 +69,16 @@ class STACCOPExporter:
         # Create STAC Item
         stac_item = self.create_stac_item(layer, layer_id, asset_path, cop_metadata, file_name)
         
+        # Store file_name for collection link generation
+        stac_item['_file_name'] = file_name
+        
         # Save STAC Item JSON using sanitized filename
         item_path = os.path.join(self.stac_dir, f'{file_name}.json')
+        
+        # Remove internal _file_name before saving
+        item_to_save = {k: v for k, v in stac_item.items() if k != '_file_name'}
         with open(item_path, 'w', encoding='utf-8') as f:
-            json.dump(stac_item, f, indent=2)
+            json.dump(item_to_save, f, indent=2)
         
         self.exported_items.append(stac_item)
         return item_path
@@ -382,9 +388,10 @@ class STACCOPExporter:
         
         # Add item links
         for item in self.exported_items:
+            file_name = item.get('_file_name', item['id'])  # Fallback to ID if no file_name
             collection['links'].append({
                 "rel": "item",
-                "href": f"./{item['id']}.json"
+                "href": f"./{file_name}.json"
             })
         
         # Save collection
