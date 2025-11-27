@@ -16,7 +16,7 @@ Export QGIS map layers to STAC (SpatioTemporal Asset Catalog) format with COP (C
   - Raster layers referenced in STAC
 - **ZIP Archive**: Optional compression of all exported files
 - **STAC Compliance**: Fully compliant with STAC v1.0.0 specification
-- **COP Extension**: Implements the COP STAC extension v1.0.0
+- **COP Extension**: Implements the COP STAC extension v1.0.0 https://github.com/luciocola/cop
 
 ## Installation
 

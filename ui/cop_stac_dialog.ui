@@ -122,10 +122,32 @@
        </widget>
       </item>
       <item row="3" column="1">
-       <widget class="QLineEdit" name="lineDGGSCRS">
-        <property name="placeholderText">
-         <string>e.g., rHEALPix-R12</string>
-        </property>
+       <widget class="QComboBox" name="comboDGGSCRS">
+        <item>
+         <property name="text">
+          <string>rHEALPix (EPSG:4326)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>H3</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>S2</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>ISEA3H</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>IGEO</string>
+         </property>
+        </item>
        </widget>
       </item>
       <item row="4" column="0">
@@ -137,8 +159,11 @@
       </item>
       <item row="4" column="1">
        <widget class="QLineEdit" name="lineDGGSZone">
+        <property name="readOnly">
+         <bool>true</bool>
+        </property>
         <property name="placeholderText">
-         <string>DGGS zone identifier (optional)</string>
+         <string>Auto-calculated from layer extent</string>
         </property>
        </widget>
       </item>
