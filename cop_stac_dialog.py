@@ -257,6 +257,15 @@ class COPSTACDialog(QDialog, FORM_CLASS):
                         f"Failed to export layer: {str(e)}"
                     )
 
+            # Create STAC collection after all items are exported
+            if success_count > 0:
+                collection_id = cop_metadata.get('mission', 'cop-collection').lower().replace(' ', '-')
+                exporter.create_collection(
+                    collection_id=collection_id,
+                    title=f"{cop_metadata.get('mission', 'COP Export')} Collection",
+                    description=f"STAC Collection for {cop_metadata.get('mission', 'COP export')} with {success_count} item(s). Classification: {cop_metadata.get('classification', 'unknown')}."
+                )
+
             # Create ZIP if requested
             if self.checkCreateZip.isChecked() and success_count > 0:
                 zip_path, sha256_hash = exporter.create_zip_archive()

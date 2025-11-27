@@ -182,6 +182,8 @@ class CopExporter:
 
     def run(self):
         """Run method that performs all the real work"""
+        # Reload layers each time the dialog is shown
+        self.dlg.load_layers()
         # show the dialog
         self.dlg.show()
         # Run the dialog event loop

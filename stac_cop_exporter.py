@@ -115,59 +115,119 @@ class STACCOPExporter:
             return output_file
             
         elif isinstance(layer, QgsRasterLayer):
-            # Export raster with proper handling
+            # Export raster - handle both files and web services
             source_path = layer.source()
             
-            # Determine output format and extension
-            if source_path.lower().endswith('.tif') or source_path.lower().endswith('.tiff'):
-                output_file = os.path.join(self.assets_dir, f'{layer_id}.tif')
-            else:
-                # Convert to GeoTIFF for portability
-                output_file = os.path.join(self.assets_dir, f'{layer_id}.tif')
+            # Check if this is a web service (XYZ, WMS, WMTS, etc.)
+            # Check for common web service parameters and URLs
+            is_web_service = any(indicator in source_path for indicator in [
+                'type=xyz', 'type=wms', 'type=wmts', 'ServiceType=', 
+                'http://', 'https://', 'url=http', 'url=https'
+            ]) or (source_path.startswith('crs=') and '&type=' in source_path)
             
-            # Export raster using QGIS raster writer
+            if is_web_service:
+                # For web services, export metadata as JSON instead of raster data
+                output_file = os.path.join(self.assets_dir, f'{layer_id}_service.json')
+                
+                # Parse service parameters
+                service_info = {
+                    'type': 'web_service',
+                    'source': source_path,
+                    'layer_name': layer.name(),
+                    'provider': layer.providerType()
+                }
+                
+                # Extract URL if present (handle URL-encoded characters)
+                if 'url=' in source_path:
+                    url_start = source_path.find('url=') + 4
+                    url_end = source_path.find('&', url_start)
+                    if url_end == -1:
+                        url = source_path[url_start:]
+                    else:
+                        url = source_path[url_start:url_end]
+                    # Decode URL-encoded characters
+                    import urllib.parse
+                    url = urllib.parse.unquote(url)
+                    service_info['url'] = url
+                
+                # Save service metadata
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    json.dump(service_info, f, indent=2)
+                
+                return output_file
+            
+            # For local files, clean source path (remove any GDAL dataset specifiers)
+            if '|' in source_path:
+                source_path = source_path.split('|')[0]
+            
+            # Determine output format and extension
+            output_file = os.path.join(self.assets_dir, f'{layer_id}.tif')
+            
+            # Try using GDAL directly if available for better reliability
+            if GDAL_AVAILABLE:
+                try:
+                    # Open source dataset
+                    src_ds = gdal.Open(source_path, gdal.GA_ReadOnly)
+                    if src_ds is None:
+                        raise Exception(f"Cannot open raster source: {source_path}")
+                    
+                    # Create output with GeoTIFF driver
+                    driver = gdal.GetDriverByName('GTiff')
+                    dst_ds = driver.CreateCopy(output_file, src_ds, strict=0, options=['COMPRESS=LZW'])
+                    
+                    # Close datasets
+                    dst_ds = None
+                    src_ds = None
+                    
+                    if not os.path.exists(output_file):
+                        raise Exception("GDAL export did not create output file")
+                    
+                    return output_file
+                    
+                except Exception as e:
+                    # GDAL failed, try fallback
+                    pass
+            
+            # Fallback: try QGIS raster writer
             try:
-                # Create raster file writer
                 file_writer = QgsRasterFileWriter(output_file)
                 file_writer.setOutputFormat('GTiff')
                 
-                # Create pipe for raster processing
                 pipe = QgsRasterPipe()
                 provider = layer.dataProvider()
                 
                 if not pipe.set(provider.clone()):
                     raise Exception("Cannot set pipe provider")
                 
-                # Get layer extent (visible portion)
                 extent = layer.extent()
                 width = layer.width()
                 height = layer.height()
+                crs = layer.crs()
                 
-                # Write raster
+                # Use the correct writeRaster signature
                 error = file_writer.writeRaster(
                     pipe,
                     width,
                     height,
                     extent,
-                    layer.crs()
+                    crs
                 )
                 
                 if error != QgsRasterFileWriter.NoError:
-                    # Fallback: copy original file if write fails
-                    if os.path.exists(source_path) and os.path.isfile(source_path):
-                        shutil.copy2(source_path, output_file)
-                    else:
-                        raise Exception(f"Failed to export raster layer: {error}")
+                    raise Exception(f"QgsRasterFileWriter error code: {error}")
                 
                 return output_file
                 
             except Exception as e:
-                # Fallback: try to copy the original file
+                # Final fallback: copy original file if it exists and is a file
                 if os.path.exists(source_path) and os.path.isfile(source_path):
-                    shutil.copy2(source_path, output_file)
-                    return output_file
+                    try:
+                        shutil.copy2(source_path, output_file)
+                        return output_file
+                    except Exception as copy_error:
+                        raise Exception(f"Failed to export raster - GDAL failed, QGIS writer failed ({str(e)}), and file copy failed ({str(copy_error)})")
                 else:
-                    raise Exception(f"Failed to export raster: {str(e)}")
+                    raise Exception(f"Failed to export raster - source file not accessible: {source_path}. QGIS error: {str(e)}")
         
         else:
             raise Exception(f"Unsupported layer type: {type(layer)}")
@@ -224,17 +284,23 @@ class STACCOPExporter:
             media_type = "application/geo+json"
             asset_roles = ["data"]
         else:  # Raster layer
-            asset_type = "imagery"
-            # Determine media type from file extension
-            if asset_path.lower().endswith('.tif') or asset_path.lower().endswith('.tiff'):
-                media_type = "image/tiff; application=geotiff"
-            elif asset_path.lower().endswith('.png'):
-                media_type = "image/png"
-            elif asset_path.lower().endswith('.jpg') or asset_path.lower().endswith('.jpeg'):
-                media_type = "image/jpeg"
+            # Check if this is a web service
+            if asset_path.lower().endswith('_service.json'):
+                asset_type = "metadata"
+                media_type = "application/json"
+                asset_roles = ["metadata"]
             else:
-                media_type = "image/tiff"
-            asset_roles = ["data", "visual"]
+                asset_type = "imagery"
+                # Determine media type from file extension
+                if asset_path.lower().endswith('.tif') or asset_path.lower().endswith('.tiff'):
+                    media_type = "image/tiff; application=geotiff"
+                elif asset_path.lower().endswith('.png'):
+                    media_type = "image/png"
+                elif asset_path.lower().endswith('.jpg') or asset_path.lower().endswith('.jpeg'):
+                    media_type = "image/jpeg"
+                else:
+                    media_type = "image/tiff"
+                asset_roles = ["data", "visual"]
         
         # Build STAC Item
         stac_extensions = [
@@ -269,6 +335,14 @@ class STACCOPExporter:
                 {
                     "rel": "self",
                     "href": f"./{file_name}.json"
+                },
+                {
+                    "rel": "collection",
+                    "href": "./collection.json"
+                },
+                {
+                    "rel": "parent",
+                    "href": "./collection.json"
                 }
             ]
         }
