@@ -44,6 +44,7 @@ class COPSTACDialog(QDialog, FORM_CLASS):
         
         # Initialize GNOSIS agent
         self.gnosis_agent = GnosisDGGSAgent()
+        self.gnosis_data_path = None  # Store path to GNOSIS data for export
         
         # Initialize
         self.output_dir = None
@@ -294,17 +295,18 @@ class COPSTACDialog(QDialog, FORM_CLASS):
             result_msg += f"<hr><p><b>Extent:</b><br>"
             result_msg += f"Lon: {summary['extent']['xmin']:.4f} to {summary['extent']['xmax']:.4f}<br>"
             result_msg += f"Lat: {summary['extent']['ymin']:.4f} to {summary['extent']['ymax']:.4f}</p>"
-            
-            # Ask if user wants to save the data
+            # Ask if user wants to include the data in export
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("GNOSIS Earth Query Results")
             msg_box.setTextFormat(Qt.RichText)
             msg_box.setText(result_msg)
-            msg_box.setInformativeText("Would you like to save this data as a GeoJSON layer?")
+            msg_box.setInformativeText("Include this SRTM elevation data in the COP STAC export?")
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg_box.setDefaultButton(QMessageBox.Yes)
             
             if msg_box.exec_() == QMessageBox.Yes:
+                # Automatically save to temp location for export
+                self.auto_save_gnosis_data(combined_extent, dggs_crs, zone_id, summary)
                 self.save_gnosis_data(combined_extent, dggs_crs, zone_id)
         
         except Exception as e:
@@ -313,6 +315,43 @@ class COPSTACDialog(QDialog, FORM_CLASS):
                 self,
                 "Query Error",
                 f"Error querying GNOSIS Earth:\n{str(e)}"
+            )
+    def auto_save_gnosis_data(self, extent, dggs_crs, zone_id, summary):
+        """Automatically save GNOSIS data for inclusion in COP export"""
+        import tempfile
+        
+        # Create temp file for GNOSIS data
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, "gnosis_srtm_dggs_temp.geojson")
+        
+        # Fetch and save data
+        success = self.gnosis_agent.fetch_and_save_geojson(
+            extent, temp_file, dggs_crs, zone_id
+        )
+        
+        if success:
+            self.gnosis_data_path = temp_file
+            
+            # Add to map for visualization
+            if self.iface:
+                layer = QgsVectorLayer(temp_file, "GNOSIS SRTM DGGS", "ogr")
+                if layer.isValid():
+                    QgsProject.instance().addMapLayer(layer)
+            
+            # Show confirmation
+            QMessageBox.information(
+                self,
+                "GNOSIS Data Ready",
+                f"SRTM elevation data will be included in the COP export.\n\n"
+                f"Zones: {summary['zone_count']}\n"
+                f"Features: {summary['feature_count']}\n\n"
+                f"The data has been added to the map for preview."
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Failed to save GNOSIS data:\n{self.gnosis_agent.last_error}"
             )
     
     def save_gnosis_data(self, extent, dggs_crs, zone_id=None):
@@ -403,6 +442,7 @@ class COPSTACDialog(QDialog, FORM_CLASS):
             exporter = STACCOPExporter(self.output_dir, map_canvas=map_canvas)
             success_count = 0
             
+            # Export selected layers
             for layer in selected_layers:
                 try:
                     exporter.export_layer(layer, cop_metadata)
@@ -412,6 +452,29 @@ class COPSTACDialog(QDialog, FORM_CLASS):
                         self,
                         f"Export Error - {layer.name()}",
                         f"Failed to export layer: {str(e)}"
+                    )
+            
+            # Export GNOSIS data if available
+            if self.gnosis_data_path and os.path.exists(self.gnosis_data_path):
+                try:
+                    # Load GNOSIS data as a temporary layer
+                    gnosis_layer = QgsVectorLayer(self.gnosis_data_path, "GNOSIS_SRTM_DGGS", "ogr")
+                    if gnosis_layer.isValid():
+                        # Add GNOSIS-specific metadata
+                        gnosis_metadata = cop_metadata.copy()
+                        gnosis_metadata['gnosis_source'] = 'GNOSIS Earth SRTM ViewFinder Panorama'
+                        gnosis_metadata['data_type'] = 'elevation'
+                        
+                        exporter.export_layer(gnosis_layer, gnosis_metadata)
+                        success_count += 1
+                        
+                        # Clean up temp file after export
+                        # (keeping it for now in case user wants to reference it)
+                except Exception as e:
+                    QMessageBox.warning(
+                        self,
+                        "GNOSIS Export Warning",
+                        f"Could not export GNOSIS data: {str(e)}"
                     )
 
             # Create STAC collection after all items are exported

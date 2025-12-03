@@ -347,6 +347,12 @@ class STACCOPExporter:
             ]
         }
         
+        # Add GNOSIS-specific metadata if present
+        if cop_metadata.get('gnosis_source'):
+            stac_item['properties']['gnosis:source'] = cop_metadata['gnosis_source']
+            stac_item['properties']['gnosis:data_type'] = cop_metadata.get('data_type', 'elevation')
+            stac_item['properties']['description'] = f"SRTM elevation data from {cop_metadata['gnosis_source']}"
+        
         # Add raster-specific metadata if it's a raster layer
         if isinstance(layer, QgsRasterLayer):
             provider = layer.dataProvider()
