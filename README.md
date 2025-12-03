@@ -11,6 +11,11 @@ Export QGIS map layers to STAC (SpatioTemporal Asset Catalog) format with COP (C
   - Releasability specification
   - DGGS (Discrete Global Grid System) support with zone IDs and CRS
   - Service provider information
+- **GNOSIS Earth Integration**: Query SRTM elevation data using DGGS coordinates
+  - Automatic retrieval of terrain data for selected areas
+  - Support for multiple DGGS coordinate systems (rHEALPix, H3, ISEA3H, etc.)
+  - Direct integration with https://maps.gnosis.earth/ogcapi
+  - Coverage statistics and zone identification
 - **Multiple Export Formats**: 
   - Vector layers exported as GeoJSON
   - Raster layers referenced in STAC
@@ -63,6 +68,12 @@ Export QGIS map layers to STAC (SpatioTemporal Asset Catalog) format with COP (C
    - Files will be created in a `stac_cop_export` subdirectory
    - If ZIP is selected, a timestamped archive will be created
 
+6. **Query GNOSIS Earth** (Optional)
+   - Click "Query GNOSIS Earth" to retrieve SRTM elevation data for your area
+   - View coverage statistics including DGGS zones and elevation ranges
+   - Optionally save retrieved data as GeoJSON and add to map
+   - See [GNOSIS_DGGS_AGENT.md](GNOSIS_DGGS_AGENT.md) for details
+
 ## Output Structure
 
 ```
@@ -76,6 +87,18 @@ output_directory/
 │       └── layer2.geojson
 └── stac_cop_export_20251126_120000.zip  # Optional ZIP archive
 ```
+
+## GNOSIS Earth Integration
+
+The plugin includes a GNOSIS DGGS Agent that queries the GNOSIS Earth OGC API for SRTM elevation data:
+
+- **API**: https://maps.gnosis.earth/ogcapi/collections/SRTM_ViewFinderPanorama/dggs/
+- **Automatic DGGS Queries**: Based on selected layer extents
+- **Multi-CRS Support**: rHEALPix, H3, S2, ISEA3H, IGEO
+- **Coverage Analysis**: Zone counts, elevation statistics
+- **GeoJSON Export**: Save and load data directly into QGIS
+
+See [GNOSIS_DGGS_AGENT.md](GNOSIS_DGGS_AGENT.md) for complete documentation.
 
 ## STAC COP Extension Fields
 

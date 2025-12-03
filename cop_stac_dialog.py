@@ -13,6 +13,7 @@ from qgis.core import (
     QgsCoordinateTransform
 )
 from .stac_cop_exporter import STACCOPExporter
+from .gnosis_dggs_agent import GnosisDGGSAgent
 
 # Load UI file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -36,6 +37,13 @@ class COPSTACDialog(QDialog, FORM_CLASS):
         self.btnCancel.clicked.connect(self.reject)
         self.comboDGGSCRS.currentIndexChanged.connect(self.update_dggs_zone_id)
         self.listLayers.itemChanged.connect(self.update_dggs_zone_id)
+        
+        # Connect GNOSIS query button if it exists in UI
+        if hasattr(self, 'btnQueryGnosis'):
+            self.btnQueryGnosis.clicked.connect(self.query_gnosis_earth)
+        
+        # Initialize GNOSIS agent
+        self.gnosis_agent = GnosisDGGSAgent()
         
         # Initialize
         self.output_dir = None
@@ -208,6 +216,155 @@ class COPSTACDialog(QDialog, FORM_CLASS):
                     selected.append(layer)
         
         return selected
+
+    def query_gnosis_earth(self):
+        """Query GNOSIS Earth API for SRTM data in current extent"""
+        selected_layers = self.get_selected_layers()
+        if not selected_layers:
+            QMessageBox.warning(
+                self,
+                "No Layers Selected",
+                "Please select at least one layer to determine the query extent."
+            )
+            return
+        
+        # Calculate combined extent
+        project = QgsProject.instance()
+        combined_extent = None
+        
+        for layer in selected_layers:
+            extent = layer.extent()
+            crs = layer.crs()
+            
+            # Transform to WGS84
+            extent_wgs84 = self.gnosis_agent.transform_extent_to_wgs84(extent, crs)
+            
+            if combined_extent is None:
+                combined_extent = extent_wgs84
+            else:
+                combined_extent.combineExtentWith(extent_wgs84)
+        
+        if combined_extent is None:
+            QMessageBox.warning(self, "Error", "Could not determine extent.")
+            return
+        
+        # Get DGGS CRS
+        dggs_crs = self.get_dggs_crs_string()
+        zone_id = self.lineDGGSZone.text() if self.lineDGGSZone.text() else None
+        
+        # Show progress message
+        from qgis.PyQt.QtWidgets import QProgressDialog
+        from qgis.PyQt.QtCore import Qt
+        
+        progress = QProgressDialog("Querying GNOSIS Earth API...", "Cancel", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle("GNOSIS DGGS Query")
+        progress.show()
+        
+        try:
+            # Query GNOSIS Earth
+            summary = self.gnosis_agent.get_coverage_summary(combined_extent, dggs_crs)
+            
+            progress.close()
+            
+            if not summary['success']:
+                QMessageBox.critical(
+                    self,
+                    "Query Failed",
+                    f"Failed to query GNOSIS Earth API:\n{summary.get('error', 'Unknown error')}"
+                )
+                return
+            
+            # Build result message
+            result_msg = f"<h3>GNOSIS Earth SRTM Coverage</h3>"
+            result_msg += f"<p><b>DGGS CRS:</b> {summary['dggs_crs']}</p>"
+            result_msg += f"<p><b>DGGS Zones Found:</b> {summary['zone_count']}</p>"
+            result_msg += f"<p><b>Features Found:</b> {summary['feature_count']}</p>"
+            
+            if summary.get('zones'):
+                zones_list = ', '.join(summary['zones'][:10])
+                if len(summary['zones']) > 10:
+                    zones_list += f" ... (+{len(summary['zones']) - 10} more)"
+                result_msg += f"<p><b>Zone IDs:</b> {zones_list}</p>"
+            
+            if 'elevation_stats' in summary:
+                elev = summary['elevation_stats']
+                result_msg += f"<p><b>Elevation Range:</b> {elev['min']}m to {elev['max']}m</p>"
+            
+            result_msg += f"<hr><p><b>Extent:</b><br>"
+            result_msg += f"Lon: {summary['extent']['xmin']:.4f} to {summary['extent']['xmax']:.4f}<br>"
+            result_msg += f"Lat: {summary['extent']['ymin']:.4f} to {summary['extent']['ymax']:.4f}</p>"
+            
+            # Ask if user wants to save the data
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("GNOSIS Earth Query Results")
+            msg_box.setTextFormat(Qt.RichText)
+            msg_box.setText(result_msg)
+            msg_box.setInformativeText("Would you like to save this data as a GeoJSON layer?")
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.Yes)
+            
+            if msg_box.exec_() == QMessageBox.Yes:
+                self.save_gnosis_data(combined_extent, dggs_crs, zone_id)
+        
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(
+                self,
+                "Query Error",
+                f"Error querying GNOSIS Earth:\n{str(e)}"
+            )
+    
+    def save_gnosis_data(self, extent, dggs_crs, zone_id=None):
+        """Save GNOSIS Earth data as GeoJSON file and optionally add to map"""
+        from qgis.PyQt.QtWidgets import QFileDialog
+        
+        # Ask for output file
+        output_file, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save GNOSIS Earth Data",
+            os.path.join(os.path.expanduser("~"), "gnosis_srtm_dggs.geojson"),
+            "GeoJSON (*.geojson *.json)"
+        )
+        
+        if not output_file:
+            return
+        
+        # Fetch and save data
+        success = self.gnosis_agent.fetch_and_save_geojson(
+            extent, output_file, dggs_crs, zone_id
+        )
+        
+        if success:
+            # Ask if user wants to add to map
+            reply = QMessageBox.question(
+                self,
+                "Add to Map",
+                "Data saved successfully. Add layer to map?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes and self.iface:
+                layer = QgsVectorLayer(output_file, "GNOSIS SRTM DGGS", "ogr")
+                if layer.isValid():
+                    QgsProject.instance().addMapLayer(layer)
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        "Layer added to map successfully."
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Layer Error",
+                        "Could not add layer to map."
+                    )
+        else:
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Failed to save data:\n{self.gnosis_agent.last_error}"
+            )
 
     def export_layers(self):
         """Export selected layers to STAC COP format"""
