@@ -263,9 +263,14 @@ class COPSTACDialog(QDialog, FORM_CLASS):
             min(85.0511, combined_extent.yMaximum())
         )
         
-        # Get DGGS CRS
+        # Get DGGS CRS and server URL
         dggs_crs = self.get_dggs_crs_string()
         zone_id = self.lineDGGSZone.text() if self.lineDGGSZone.text() else None
+        
+        # Get server URL from combo box
+        server_url = self.comboDGGSServer.currentText().strip()
+        if server_url:
+            self.gnosis_agent.BASE_URL = server_url
         
         # Show progress message
         from qgis.PyQt.QtWidgets import QProgressDialog
@@ -446,7 +451,7 @@ class COPSTACDialog(QDialog, FORM_CLASS):
             'releasability': self.lineReleasability.text(),
             'dggs_crs': self.get_dggs_crs_string(),
             'dggs_zone_id': self.lineDGGSZone.text(),
-            'service_provider': self.lineServiceProvider.text()
+            'dggs_server': self.comboDGGSServer.currentText().strip()
         }
 
         # Export layers

@@ -19,11 +19,18 @@ from qgis.core import (
 class GnosisDGGSAgent:
     """Agent for querying GNOSIS Earth OGC API for DGGS-based SRTM data"""
     
-    BASE_URL = "https://maps.gnosis.earth/ogcapi"
+    # Default server settings (can be overridden per instance)
+    DEFAULT_BASE_URL = "https://maps.gnosis.earth/ogcapi"
     COLLECTION = "SRTM_ViewFinderPanorama"
     
-    def __init__(self):
-        """Initialize the GNOSIS DGGS Agent"""
+    def __init__(self, base_url=None):
+        """
+        Initialize the GNOSIS DGGS Agent
+        
+        Args:
+            base_url: Optional custom server URL (defaults to GNOSIS Earth)
+        """
+        self.BASE_URL = base_url or self.DEFAULT_BASE_URL
         self.last_response = None
         self.last_error = None
     

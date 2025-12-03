@@ -180,15 +180,28 @@
       <item row="6" column="0">
        <widget class="QLabel" name="labelServiceProvider">
         <property name="text">
-         <string>Service Provider:</string>
+         <string>DGGS Server:</string>
         </property>
        </widget>
       </item>
       <item row="6" column="1">
-       <widget class="QLineEdit" name="lineServiceProvider">
-        <property name="placeholderText">
-         <string>Data/service provider (optional)</string>
+       <widget class="QComboBox" name="comboDGGSServer">
+        <property name="editable">
+         <bool>true</bool>
         </property>
+        <property name="toolTip">
+         <string>Select or enter a DGGS data server URL</string>
+        </property>
+        <item>
+         <property name="text">
+          <string>https://maps.gnosis.earth/ogcapi</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>https://api.example.com/dggs</string>
+         </property>
+        </item>
        </widget>
       </item>
      </layout>
