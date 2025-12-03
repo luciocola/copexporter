@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Document background -->
+  <rect x="12" y="4" width="36" height="52" rx="2" fill="#ffffff" stroke="#2c3e50" stroke-width="2"/>
+  
+  <!-- Folded corner -->
+  <path d="M 48 4 L 48 14 L 58 14 Z" fill="#ecf0f1" stroke="#2c3e50" stroke-width="2" stroke-linejoin="miter"/>
+  <line x1="48" y1="4" x2="48" y2="14" stroke="#2c3e50" stroke-width="2"/>
+  <line x1="48" y1="14" x2="58" y2="14" stroke="#2c3e50" stroke-width="2"/>
+  
+  <!-- STAC text -->
+  <text x="30" y="26" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#3498db" text-anchor="middle">STAC</text>
+  
+  <!-- COP badge -->
+  <circle cx="30" cy="38" r="8" fill="#e74c3c"/>
+  <text x="30" y="41" font-family="Arial, sans-serif" font-size="7" font-weight="bold" fill="#ffffff" text-anchor="middle">COP</text>
+  
+  <!-- Document lines -->
+  <line x1="18" y1="48" x2="42" y2="48" stroke="#95a5a6" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="18" y1="52" x2="38" y2="52" stroke="#95a5a6" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Globe/Earth symbol at bottom -->
+  <circle cx="30" cy="60" r="3" fill="none" stroke="#27ae60" stroke-width="1.5"/>
+  <ellipse cx="30" cy="60" rx="3" ry="1.5" fill="none" stroke="#27ae60" stroke-width="1"/>
+  <line x1="30" y1="57" x2="30" y2="63" stroke="#27ae60" stroke-width="1"/>
+</svg>
