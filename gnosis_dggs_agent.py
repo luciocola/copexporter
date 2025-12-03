@@ -51,8 +51,10 @@ class GnosisDGGSAgent:
                     self.log_message(error_msg, Qgis.Warning)
                     return None
             
+            # Convert zone IDs to strings for logging
+            zone_preview = ', '.join(str(z) for z in zones_to_query[:5])
             self.log_message(
-                f"Found {len(zones_to_query)} zones to query: {', '.join(zones_to_query[:5])}...",
+                f"Found {len(zones_to_query)} zones to query: {zone_preview}...",
                 Qgis.Info
             )
             
@@ -131,10 +133,13 @@ class GnosisDGGSAgent:
             dict: GeoJSON data for the zone or None if error
         """
         try:
-            # Build zone data URL
-            url = f"{self.BASE_URL}/collections/{self.COLLECTION}/dggs/{dggs_crs}/zones/{zone_id}/data.geojson"
+            # Ensure zone_id is a string
+            zone_id_str = str(zone_id)
             
-            self.log_message(f"Querying zone {zone_id}: {url}", Qgis.Info)
+            # Build zone data URL
+            url = f"{self.BASE_URL}/collections/{self.COLLECTION}/dggs/{dggs_crs}/zones/{zone_id_str}/data.geojson"
+            
+            self.log_message(f"Querying zone {zone_id_str}: {url}", Qgis.Info)
             
             # Make request
             request = urllib.request.Request(url)
@@ -147,13 +152,13 @@ class GnosisDGGSAgent:
                 
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                self.log_message(f"No data available for zone {zone_id}", Qgis.Warning)
+                self.log_message(f"No data available for zone {zone_id_str}", Qgis.Warning)
             else:
-                self.log_message(f"HTTP Error {e.code} for zone {zone_id}: {e.reason}", Qgis.Warning)
+                self.log_message(f"HTTP Error {e.code} for zone {zone_id_str}: {e.reason}", Qgis.Warning)
             return None
             
         except Exception as e:
-            self.log_message(f"Error querying zone {zone_id}: {str(e)}", Qgis.Warning)
+            self.log_message(f"Error querying zone {zone_id_str}: {str(e)}", Qgis.Warning)
             return None
     
     def get_zones_for_extent(self, extent, dggs_crs="rHEALPix", zone_level=2):
