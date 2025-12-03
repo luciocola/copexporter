@@ -48,6 +48,15 @@ class STACCOPExporter:
         # Create assets directory
         self.assets_dir = os.path.join(self.stac_dir, 'assets')
         os.makedirs(self.assets_dir, exist_ok=True)
+        
+        # Clip extent for exports
+        self.clip_extent = None
+        self.clip_crs = None
+    
+    def set_clip_extent(self, extent, crs):
+        """Set extent for clipping exported layers"""
+        self.clip_extent = extent
+        self.clip_crs = crs
 
     def export_layer(self, layer, cop_metadata):
         """
@@ -101,6 +110,17 @@ class STACCOPExporter:
             options = QgsVectorFileWriter.SaveVectorOptions()
             options.driverName = 'GeoJSON'
             options.fileEncoding = 'UTF-8'
+            
+            # Apply extent filter if set
+            if self.clip_extent and self.clip_crs:
+                # Transform clip extent to layer CRS
+                transform = QgsCoordinateTransform(
+                    self.clip_crs,
+                    layer.crs(),
+                    QgsProject.instance()
+                )
+                clip_extent_in_layer_crs = transform.transformBoundingBox(self.clip_extent)
+                options.filterExtent = clip_extent_in_layer_crs
             
             error = QgsVectorFileWriter.writeAsVectorFormatV3(
                 layer,

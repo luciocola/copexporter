@@ -45,6 +45,7 @@ class COPSTACDialog(QDialog, FORM_CLASS):
         # Initialize GNOSIS agent
         self.gnosis_agent = GnosisDGGSAgent()
         self.gnosis_data_path = None  # Store path to GNOSIS data for export
+        self.export_extent = None  # Store map canvas extent for clipping exports
         
         # Initialize
         self.output_dir = None
@@ -219,35 +220,48 @@ class COPSTACDialog(QDialog, FORM_CLASS):
         return selected
 
     def query_gnosis_earth(self):
-        """Query GNOSIS Earth API for SRTM data in current extent"""
-        selected_layers = self.get_selected_layers()
-        if not selected_layers:
+        """Query GNOSIS Earth API for SRTM data in current map view extent"""
+        # Get current map canvas extent
+        if not self.iface:
             QMessageBox.warning(
                 self,
-                "No Layers Selected",
-                "Please select at least one layer to determine the query extent."
+                "No Map Canvas",
+                "Cannot access map canvas. Please ensure QGIS interface is available."
             )
             return
         
-        # Calculate combined extent
-        project = QgsProject.instance()
-        combined_extent = None
+        canvas = self.iface.mapCanvas()
+        extent = canvas.extent()
+        canvas_crs = canvas.mapSettings().destinationCrs()
         
-        for layer in selected_layers:
-            extent = layer.extent()
-            crs = layer.crs()
-            
-            # Transform to WGS84
-            extent_wgs84 = self.gnosis_agent.transform_extent_to_wgs84(extent, crs)
-            
-            if combined_extent is None:
-                combined_extent = extent_wgs84
-            else:
-                combined_extent.combineExtentWith(extent_wgs84)
+        # Transform to WGS84
+        combined_extent = self.gnosis_agent.transform_extent_to_wgs84(extent, canvas_crs)
         
         if combined_extent is None:
             QMessageBox.warning(self, "Error", "Could not determine extent.")
             return
+        
+        # Validate extent is not too large
+        extent_width = combined_extent.xMaximum() - combined_extent.xMinimum()
+        extent_height = combined_extent.yMaximum() - combined_extent.yMinimum()
+        
+        if extent_width > 180 or extent_height > 90:
+            QMessageBox.warning(
+                self,
+                "Extent Too Large",
+                f"The query extent is too large ({extent_width:.2f}° x {extent_height:.2f}°).\n\n"
+                "GNOSIS Earth API requires a more specific area.\n"
+                "Please select layers with a smaller geographic extent (max 180° x 90°)."
+            )
+            return
+        
+        # Clamp extent to valid WGS84 bounds
+        combined_extent.set(
+            max(-180.0, combined_extent.xMinimum()),
+            max(-85.0511, combined_extent.yMinimum()),
+            min(180.0, combined_extent.xMaximum()),
+            min(85.0511, combined_extent.yMaximum())
+        )
         
         # Get DGGS CRS
         dggs_crs = self.get_dggs_crs_string()
@@ -437,9 +451,16 @@ class COPSTACDialog(QDialog, FORM_CLASS):
 
         # Export layers
         try:
-            # Get map canvas for raster extent if available
+            # Get map canvas extent for clipping if available
             map_canvas = self.iface.mapCanvas() if self.iface else None
             exporter = STACCOPExporter(self.output_dir, map_canvas=map_canvas)
+            
+            # Set clip extent from current map view
+            if map_canvas:
+                canvas_extent = map_canvas.extent()
+                canvas_crs = map_canvas.mapSettings().destinationCrs()
+                exporter.set_clip_extent(canvas_extent, canvas_crs)
+            
             success_count = 0
             
             # Export selected layers

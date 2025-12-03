@@ -63,7 +63,22 @@ class GnosisDGGSAgent:
                 return result
                 
         except urllib.error.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.read().decode('utf-8')
+            except:
+                pass
+            
             error_msg = f"HTTP Error {e.code}: {e.reason}"
+            if error_body:
+                error_msg += f"\nDetails: {error_body[:200]}"
+            
+            if e.code == 400:
+                error_msg += "\n\nPossible causes:\n"
+                error_msg += "- Bounding box too large (try a smaller area)\n"
+                error_msg += "- Invalid DGGS CRS parameter\n"
+                error_msg += "- Invalid zone ID"
+            
             self.last_error = error_msg
             self.log_message(error_msg, Qgis.Critical)
             return None
