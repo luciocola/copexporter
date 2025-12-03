@@ -189,19 +189,19 @@ class COPSTACDialog(QDialog, FORM_CLASS):
             return "AUTO"
     
     def get_dggs_crs_string(self):
-        """Get DGGS CRS string for metadata"""
+        """Get DGGS CRS string for metadata and API"""
         dggs_text = self.comboDGGSCRS.currentText()
         
-        # Map UI text to standard DGGS CRS identifiers
+        # Map UI text to GNOSIS API DGGS system names
         dggs_map = {
-            "rHEALPix (EPSG:4326)": "rHEALPix-R12",
-            "H3": "H3-R5",
-            "S2": "S2-L10",
-            "ISEA3H": "ISEA3H-R12",
-            "IGEO": "IGEO-R10"
+            "rHEALPix (EPSG:4326)": "rHEALPix",
+            "H3": "H3",
+            "S2": "S2",
+            "ISEA3H": "ISEA3H",
+            "IGEO": "IGEO"
         }
         
-        return dggs_map.get(dggs_text, "rHEALPix-R12")
+        return dggs_map.get(dggs_text, "rHEALPix")
     
     def get_selected_layers(self):
         """Get list of selected layer IDs"""

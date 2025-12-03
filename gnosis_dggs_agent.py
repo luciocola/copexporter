@@ -27,40 +27,58 @@ class GnosisDGGSAgent:
         self.last_response = None
         self.last_error = None
     
-    def query_dggs_data(self, extent, dggs_crs="rHEALPix-R12", zone_id=None):
+    def query_dggs_data(self, extent, dggs_crs="rHEALPix", zone_id=None):
         """
         Query GNOSIS Earth API for SRTM data in the specified area and DGGS CRS
         
         Args:
             extent: QgsRectangle in EPSG:4326 (WGS84)
-            dggs_crs: DGGS Coordinate Reference System (default: rHEALPix-R12)
+            dggs_crs: DGGS system name (default: rHEALPix)
             zone_id: Optional specific DGGS zone ID to query
             
         Returns:
-            dict: Response data from API or None if error
+            dict: Combined GeoJSON FeatureCollection from all zones or None if error
         """
         try:
-            # Build query URL
-            url = self.build_query_url(extent, dggs_crs, zone_id)
+            # First, get the list of zones that intersect the extent
+            if zone_id:
+                zones_to_query = [zone_id]
+            else:
+                zones_to_query = self.get_zones_for_extent(extent, dggs_crs)
+                if not zones_to_query:
+                    error_msg = "No DGGS zones found for the specified extent"
+                    self.last_error = error_msg
+                    self.log_message(error_msg, Qgis.Warning)
+                    return None
             
-            self.log_message(f"Querying GNOSIS Earth API: {url}", Qgis.Info)
+            self.log_message(
+                f"Found {len(zones_to_query)} zones to query: {', '.join(zones_to_query[:5])}...",
+                Qgis.Info
+            )
             
-            # Make request
-            request = urllib.request.Request(url)
-            request.add_header('Accept', 'application/json')
+            # Combine features from all zones
+            all_features = []
             
-            with urllib.request.urlopen(request, timeout=30) as response:
-                data = response.read()
-                result = json.loads(data.decode('utf-8'))
-                self.last_response = result
-                self.last_error = None
-                
-                self.log_message(
-                    f"Successfully retrieved {len(result.get('features', []))} features",
-                    Qgis.Success
-                )
-                
-                return result
+            for zone in zones_to_query:
+                zone_data = self.query_zone_data(zone, dggs_crs)
+                if zone_data and 'features' in zone_data:
+                    all_features.extend(zone_data['features'])
+            
+            # Create combined FeatureCollection
+            result = {
+                "type": "FeatureCollection",
+                "features": all_features
+            }
+            
+            self.last_response = result
+            self.last_error = None
+            
+            self.log_message(
+                f"Successfully retrieved {len(all_features)} features from {len(zones_to_query)} zones",
+                Qgis.Success
+            )
+            
+            return result
                 
         except urllib.error.HTTPError as e:
             error_body = ""
@@ -101,37 +119,104 @@ class GnosisDGGSAgent:
             self.log_message(error_msg, Qgis.Critical)
             return None
     
-    def build_query_url(self, extent, dggs_crs, zone_id=None):
+    def query_zone_data(self, zone_id, dggs_crs="rHEALPix"):
         """
-        Build OGC API query URL with DGGS parameters
+        Query data for a specific DGGS zone
+        
+        Args:
+            zone_id: DGGS zone identifier (e.g., 'P44', 'O01')
+            dggs_crs: DGGS system name
+            
+        Returns:
+            dict: GeoJSON data for the zone or None if error
+        """
+        try:
+            # Build zone data URL
+            url = f"{self.BASE_URL}/collections/{self.COLLECTION}/dggs/{dggs_crs}/zones/{zone_id}/data.geojson"
+            
+            self.log_message(f"Querying zone {zone_id}: {url}", Qgis.Info)
+            
+            # Make request
+            request = urllib.request.Request(url)
+            request.add_header('Accept', 'application/json')
+            
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read()
+                result = json.loads(data.decode('utf-8'))
+                return result
+                
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                self.log_message(f"No data available for zone {zone_id}", Qgis.Warning)
+            else:
+                self.log_message(f"HTTP Error {e.code} for zone {zone_id}: {e.reason}", Qgis.Warning)
+            return None
+            
+        except Exception as e:
+            self.log_message(f"Error querying zone {zone_id}: {str(e)}", Qgis.Warning)
+            return None
+    
+    def get_zones_for_extent(self, extent, dggs_crs="rHEALPix", zone_level=2):
+        """
+        Get list of DGGS zones that intersect with the extent
         
         Args:
             extent: QgsRectangle in EPSG:4326
-            dggs_crs: DGGS CRS identifier
-            zone_id: Optional DGGS zone ID
+            dggs_crs: DGGS system name
+            zone_level: Zone resolution level (default: 2)
             
         Returns:
-            str: Complete query URL
+            list: List of zone IDs that intersect the extent
         """
-        # Base collection URL with DGGS path
-        url = f"{self.BASE_URL}/collections/{self.COLLECTION}/dggs"
-        
-        # Build query parameters
-        params = {
-            'bbox': f"{extent.xMinimum()},{extent.yMinimum()},"
-                   f"{extent.xMaximum()},{extent.yMaximum()}",
-            'dggs-crs': dggs_crs,
-            'f': 'json'
-        }
-        
-        # Add zone ID if specified
-        if zone_id:
-            params['zone-id'] = zone_id
-        
-        # Encode parameters
-        query_string = urllib.parse.urlencode(params)
-        
-        return f"{url}?{query_string}"
+        try:
+            # Query zones metadata
+            url = f"{self.BASE_URL}/collections/{self.COLLECTION}/dggs/{dggs_crs}/zones.geojson?zone-level={zone_level}"
+            
+            self.log_message(f"Fetching zones list: {url}", Qgis.Info)
+            
+            request = urllib.request.Request(url)
+            request.add_header('Accept', 'application/json')
+            
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read()
+                zones_data = json.loads(data.decode('utf-8'))
+            
+            # Filter zones that intersect with the extent
+            matching_zones = []
+            
+            for feature in zones_data.get('features', []):
+                zone_id = feature.get('id')
+                if not zone_id:
+                    continue
+                
+                # Get zone bbox from properties or geometry
+                props = feature.get('properties', {})
+                
+                # Try to extract zone bounds
+                zone_min_lat = props.get('min_lat') or props.get('min_latitude')
+                zone_max_lat = props.get('max_lat') or props.get('max_latitude')
+                zone_min_lon = props.get('min_lon') or props.get('min_longitude')
+                zone_max_lon = props.get('max_lon') or props.get('max_longitude')
+                
+                # If bounds are available, check intersection
+                if all([zone_min_lat, zone_max_lat, zone_min_lon, zone_max_lon]):
+                    # Check if zones intersect
+                    if not (extent.xMaximum() < zone_min_lon or 
+                            extent.xMinimum() > zone_max_lon or
+                            extent.yMaximum() < zone_min_lat or 
+                            extent.yMinimum() > zone_max_lat):
+                        matching_zones.append(zone_id)
+                else:
+                    # If no bounds info, include the zone (safer approach)
+                    matching_zones.append(zone_id)
+            
+            self.log_message(f"Found {len(matching_zones)} matching zones", Qgis.Info)
+            return matching_zones
+            
+        except Exception as e:
+            error_msg = f"Error fetching zones list: {str(e)}"
+            self.log_message(error_msg, Qgis.Critical)
+            return []
     
     def get_dggs_zones_for_extent(self, extent, dggs_crs="rHEALPix-R12"):
         """
