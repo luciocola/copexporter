@@ -199,7 +199,12 @@
         </item>
         <item>
          <property name="text">
-          <string>https://api.example.com/dggs</string>
+          <string>https://terranexus.pangaeainnovations.com/ogcapi</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>https://geoserver.example.org/ogcapi</string>
          </property>
         </item>
        </widget>
